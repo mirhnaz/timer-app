@@ -5,13 +5,21 @@ import Observation
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
-    // Models live here for the app's lifetime; SwiftUI popover content holds references.
+    // Models live here for the app's lifetime; SwiftUI panel content holds references.
     let stopwatch = StopwatchModel()
     let timer = TimerModel()
 
     private var statusItem: NSStatusItem!
-    private var popover: NSPopover!
+    private var panel: PopoverPanel!
     private var defaultsObserver: NSObjectProtocol?
+    private var localClickMonitor: Any?
+    private var globalClickMonitor: Any?
+
+    // KVO on the status item's window frame. The status item lives in its own
+    // NSWindow whose frame moves both when neighbours rearrange (origin shifts)
+    // and when our button resizes due to title changes (size changes). One
+    // observer handles both — re-anchors the panel underneath the button.
+    private var statusWindowObservation: NSKeyValueObservation?
 
     // Coalesce many model changes per runloop pass into a single re-render.
     private var renderPending = false
@@ -39,38 +47,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.action = #selector(togglePopover(_:))
+            button.action = #selector(togglePanel(_:))
             button.target = self
             button.imagePosition = .imageLeading
             button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        }
 
-            // NSPopover's built-in tracking is unreliable when the menu bar rearranges
-            // other items mid-frame. Reposition manually whenever our button's frame
-            // shifts (origin changes when neighbours grow/shrink, size changes when our
-            // own title length changes).
-            button.postsFrameChangedNotifications = true
-            NotificationCenter.default.addObserver(
-                forName: NSView.frameDidChangeNotification,
-                object: button,
-                queue: .main
-            ) { [weak self] _ in
-                // Tracking the popover reliably across menu bar rearrangements is
-                // unreliable, so dismiss it on any layout change. The user re-clicks
-                // the icon to get a popover correctly anchored to the new position.
-                MainActor.assumeIsolated { [self] in
-                    guard let self, self.popover.isShown else { return }
-                    self.popover.close()
-                }
+        panel = PopoverPanel(rootView: PopoverRoot(stopwatch: stopwatch, timer: timer))
+        panel.onContentResize = { [weak self] in
+            self?.repositionPanelIfShown()
+        }
+
+        // Observe the status item window's frame to keep the panel anchored
+        // when (a) other menu bar items rearrange — our window's origin shifts,
+        // and (b) our button's title appears/disappears — our window resizes.
+        if let win = statusItem.button?.window {
+            statusWindowObservation = win.observe(\.frame, options: [.new]) { [weak self] _, _ in
+                Task { @MainActor in self?.repositionPanelIfShown() }
             }
         }
 
-        let host = NSHostingController(rootView: PopoverRoot(stopwatch: stopwatch, timer: timer))
-        host.sizingOptions = [.preferredContentSize]
-
-        popover = NSPopover()
-        popover.behavior = .transient        // closes on click outside; auto-tracks status button position
-        popover.animates = true
-        popover.contentViewController = host
+        installOutsideClickMonitors()
 
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
@@ -90,15 +87,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
-    // MARK: - Popover
-
-    @objc private func togglePopover(_ sender: Any?) {
-        if popover.isShown {
-            popover.performClose(sender)
-        } else if let button = statusItem.button {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+    func applicationWillTerminate(_ notification: Notification) {
+        removeOutsideClickMonitors()
+        if let defaultsObserver {
+            NotificationCenter.default.removeObserver(defaultsObserver)
         }
+    }
+
+    // MARK: - Panel show/hide/reposition
+
+    @objc private func togglePanel(_ sender: Any?) {
+        if panel.isVisible {
+            closePanel()
+        } else {
+            showPanel()
+        }
+    }
+
+    private func showPanel() {
+        repositionPanel()
+        statusItem.button?.isHighlighted = true
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func closePanel() {
+        statusItem.button?.isHighlighted = false
+        panel.orderOut(nil)
+    }
+
+    private func repositionPanelIfShown() {
+        guard panel?.isVisible == true else { return }
+        repositionPanel()
+    }
+
+    private func repositionPanel() {
+        guard let button = statusItem.button,
+              let buttonWindow = button.window else { return }
+
+        let rectInWindow = button.convert(button.bounds, to: nil)
+        let screenRect = buttonWindow.convertToScreen(rectInWindow)
+
+        var origin = NSPoint(
+            x: screenRect.midX - panel.frame.width / 2,
+            y: screenRect.minY - panel.frame.height - 4
+        )
+
+        if let screen = buttonWindow.screen {
+            // Clamp to the screen the button is on so a wide panel doesn't
+            // spill off-screen on either side.
+            let minX = screen.frame.minX + 4
+            let maxX = screen.frame.maxX - panel.frame.width - 4
+            origin.x = max(minX, min(origin.x, maxX))
+        }
+
+        panel.setFrameOrigin(origin)
+    }
+
+    // MARK: - Outside click dismissal
+
+    private func installOutsideClickMonitors() {
+        let eventMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: eventMask) { [weak self] event in
+            MainActor.assumeIsolated {
+                self?.handleLocalClick(event)
+            }
+            return event
+        }
+
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: eventMask) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.panel.isVisible else { return }
+                self.closePanel()
+            }
+        }
+    }
+
+    private func removeOutsideClickMonitors() {
+        if let localClickMonitor {
+            NSEvent.removeMonitor(localClickMonitor)
+            self.localClickMonitor = nil
+        }
+        if let globalClickMonitor {
+            NSEvent.removeMonitor(globalClickMonitor)
+            self.globalClickMonitor = nil
+        }
+    }
+
+    private func handleLocalClick(_ event: NSEvent) {
+        guard panel.isVisible else { return }
+        guard !isClickInsidePanel(event), !isClickOnStatusItemButton(event) else { return }
+        closePanel()
+    }
+
+    private func isClickInsidePanel(_ event: NSEvent) -> Bool {
+        event.window === panel
+    }
+
+    private func isClickOnStatusItemButton(_ event: NSEvent) -> Bool {
+        guard
+            let button = statusItem.button,
+            let buttonWindow = button.window,
+            event.window === buttonWindow
+        else {
+            return false
+        }
+
+        let pointInButton = button.convert(event.locationInWindow, from: nil)
+        return button.bounds.contains(pointInButton)
     }
 
     // MARK: - Status button rendering
@@ -128,7 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem.button else { return }
 
         // mode is stored in UserDefaults via @AppStorage in the popover. UserDefaults
-        // changes route through observeDefaults() above.
+        // changes route through the defaultsObserver above.
         let modeRaw = UserDefaults.standard.string(forKey: "mode") ?? AppMode.stopwatch.rawValue
         let mode = AppMode(rawValue: modeRaw) ?? .stopwatch
 
@@ -199,8 +295,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// SwiftUI root for the popover. Re-applies preferredColorScheme so SwiftUI's environment
-// matches NSApp.appearance even though we're outside MenuBarExtra now.
+// SwiftUI root for the panel. Re-applies preferredColorScheme so SwiftUI's environment
+// matches NSApp.appearance even though we're outside MenuBarExtra.
 private struct PopoverRoot: View {
     let stopwatch: StopwatchModel
     let timer: TimerModel

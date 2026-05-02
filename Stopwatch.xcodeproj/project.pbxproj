@@ -16,6 +16,7 @@
 		6069DB4400F74461AABE870E /* TimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DB2C3323DF7456C9666F8E1 /* TimerView.swift */; };
 		D881F821983C49CAA4EF8489 /* DurationParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 492BFBAC7CCE4F21AA26A325 /* DurationParser.swift */; };
 		17CA336DE31949359F4D489B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 473365E1AE7242BA81D37FEB /* AppDelegate.swift */; };
+		B4E1E1AAB44C4F0A9F8AE7A0 /* PopoverPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D7C40FE9F148AE9B23F4C8 /* PopoverPanel.swift */; };
 		CD7FF74CB60D4C2CBFEF11A7 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 7C29276E1918435E96A2A2E2 /* AppIcon.icns */; };
 /* End PBXBuildFile section */
 
@@ -30,6 +31,7 @@
 		3DB2C3323DF7456C9666F8E1 /* TimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimerView.swift; sourceTree = "<group>"; };
 		492BFBAC7CCE4F21AA26A325 /* DurationParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DurationParser.swift; sourceTree = "<group>"; };
 		473365E1AE7242BA81D37FEB /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		A2D7C40FE9F148AE9B23F4C8 /* PopoverPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverPanel.swift; sourceTree = "<group>"; };
 		7C29276E1918435E96A2A2E2 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -46,6 +48,7 @@
 				3DB2C3323DF7456C9666F8E1 /* TimerView.swift */,
 				492BFBAC7CCE4F21AA26A325 /* DurationParser.swift */,
 				473365E1AE7242BA81D37FEB /* AppDelegate.swift */,
+				A2D7C40FE9F148AE9B23F4C8 /* PopoverPanel.swift */,
 				7C29276E1918435E96A2A2E2 /* AppIcon.icns */,
 			);
 			path = Stopwatch;
@@ -135,6 +138,7 @@
 				6069DB4400F74461AABE870E /* TimerView.swift in Sources */,
 				D881F821983C49CAA4EF8489 /* DurationParser.swift in Sources */,
 				17CA336DE31949359F4D489B /* AppDelegate.swift in Sources */,
+				B4E1E1AAB44C4F0A9F8AE7A0 /* PopoverPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
