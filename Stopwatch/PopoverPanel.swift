@@ -8,10 +8,6 @@ import SwiftUI
 @MainActor
 final class PopoverPanel: NSPanel {
 
-    /// Called after the panel resizes to match new SwiftUI content height
-    /// (mode switch, lap list growing). The owner should reposition.
-    var onContentResize: (() -> Void)?
-
     init<Content: View>(rootView: Content) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 400),
@@ -43,7 +39,6 @@ final class PopoverPanel: NSPanel {
         hosting.autoresizingMask = [.width, .height]
         hosting.onIntrinsicContentSizeChange = { [weak self] in
             self?.sizeToFitContent()
-            self?.onContentResize?()
         }
         contentView = hosting
 
@@ -58,10 +53,21 @@ final class PopoverPanel: NSPanel {
         guard let view = contentView else { return }
         let fitting = view.fittingSize
         guard fitting.width > 0, fitting.height > 0 else { return }
-        guard fitting != frame.size else { return }
-        var frame = self.frame
-        frame.size = fitting
-        setFrame(frame, display: false)
+        let old = self.frame
+        guard fitting != old.size else { return }
+        // Anchor the TOP edge: NSWindow origin is bottom-left, so growing
+        // height while keeping origin.y would push the top up into the menu
+        // bar. Shift origin.y down by the delta to keep the top anchored.
+        // X is left untouched — the menu bar may shift the icon left/right
+        // beneath us, but the panel itself stays put.
+        let heightDelta = fitting.height - old.size.height
+        var newFrame = old
+        newFrame.size = fitting
+        newFrame.origin.y -= heightDelta
+        // Animate the frame change so growth/shrink slides instead of snapping.
+        // NSWindow's built-in animator picks a sensible duration based on the
+        // size of the change.
+        animator().setFrame(newFrame, display: true, animate: true)
         invalidateShadow()
     }
 

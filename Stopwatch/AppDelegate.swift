@@ -15,11 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localClickMonitor: Any?
     private var globalClickMonitor: Any?
 
-    // KVO on the status item's window frame. The status item lives in its own
-    // NSWindow whose frame moves both when neighbours rearrange (origin shifts)
-    // and when our button resizes due to title changes (size changes). One
-    // observer handles both — re-anchors the panel underneath the button.
-    private var statusWindowObservation: NSKeyValueObservation?
+    // Previously tracked the status item window's frame so the panel could
+    // follow the icon across menu bar shifts. Disabled: the panel is wide
+    // enough that small icon shifts don't matter, and live tracking caused
+    // visible jitter during transitions. The panel is positioned once on
+    // show; only height changes (lap added, mode switch) cause subsequent
+    // adjustments, and those are handled inside PopoverPanel itself.
+    // private var statusWindowObservation: NSKeyValueObservation?
 
     // Coalesce many model changes per runloop pass into a single re-render.
     private var renderPending = false
@@ -54,18 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         panel = PopoverPanel(rootView: PopoverRoot(stopwatch: stopwatch, timer: timer))
-        panel.onContentResize = { [weak self] in
-            self?.repositionPanelIfShown()
-        }
-
-        // Observe the status item window's frame to keep the panel anchored
-        // when (a) other menu bar items rearrange — our window's origin shifts,
-        // and (b) our button's title appears/disappears — our window resizes.
-        if let win = statusItem.button?.window {
-            statusWindowObservation = win.observe(\.frame, options: [.new]) { [weak self] _, _ in
-                Task { @MainActor in self?.repositionPanelIfShown() }
-            }
-        }
 
         installOutsideClickMonitors()
 
@@ -113,11 +103,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func closePanel() {
         statusItem.button?.isHighlighted = false
         panel.orderOut(nil)
-    }
-
-    private func repositionPanelIfShown() {
-        guard panel?.isVisible == true else { return }
-        repositionPanel()
     }
 
     private func repositionPanel() {
